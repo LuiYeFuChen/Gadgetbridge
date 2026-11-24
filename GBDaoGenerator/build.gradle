@@ -5,8 +5,9 @@ apply plugin:'application'
 archivesBaseName = 'gadgetbridge-daogenerator'
 
 dependencies {
-    // https://github.com/Freeyourgadget/greenDAO/tree/fyg
-    implementation 'com.github.Freeyourgadget:greendao:1998d7cd2d21f662c6044f6ccf3b3a251bbad341'
+    // 原为 JitPack 上的 Freeyourgadget fork（com.github.Freeyourgadget:greendao:1998d7cd...），
+    // 该构建在 JitPack 上已不可解析，改用 Maven Central 的官方 2.x 生成器（同一 de.greenrobot.daogenerator 包）
+    implementation 'org.greenrobot:greendao-generator:2.2.0'
 }
 
 sourceSets {
