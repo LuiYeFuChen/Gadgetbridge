@@ -73,10 +73,16 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
     private enum Step {
         VERSION,
         TIME,
-        /** RTC frame (capture W6): tag 2, cmd 0x01, 6 byte hex date/time payload. */
-        CLOCK,
         BIND,
         LOGIN,
+        /**
+         * RTC frame (capture W6): tag 2, cmd 0x01, 6 byte hex date/time payload.
+         * <p>
+         * 必须排在 LOGIN 之后：官方抓包的真实时序是 W1(SYNC) → W2/W3(bind/login) → W6(RTC 帧)。
+         * 真机实测把 RTC 帧放在 bind 之前时，帧字节完全正确（与抓包 W6 逐字节一致）但手表时间不变，
+         * 说明固件会忽略未认证连接上的 RTC 写命令。
+         */
+        CLOCK,
         DATA,
         DONE
     }
@@ -329,9 +335,9 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
         // and end in WAITING_FOR_RECONNECT, so advance immediately -- the clock was already set
         // by the write.
         if (bootstrapStep == Step.CLOCK) {
-            LOG.info("W2 clock frame got no reply (expected), continuing to bind");
+            LOG.info("W2 clock frame got no reply (expected), bootstrap complete");
             emptyReadCount = 0;
-            advanceTo(Step.BIND);
+            onBootstrapComplete();
             return;
         }
 
@@ -359,14 +365,6 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
                 break;
             case TIME:
                 LOG.info("W2 time sync acknowledged: {}", response.extrasAsText());
-                advanceTo(Step.CLOCK);
-                break;
-            case CLOCK:
-                // The vendor app does not get a dedicated reply for the RTC frame, so whatever
-                // comes back (an ACKY echo, an unrelated frame or nothing at all) must not stop
-                // the sequence -- the clock has already been set by the write itself.
-                LOG.info("W2 clock frame sent, reply cmd={} text=\"{}\" -- continuing to bind",
-                        hexCmdId(response), response.extrasAsText());
                 advanceTo(Step.BIND);
                 break;
             case BIND:
@@ -374,8 +372,16 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
                 advanceTo(Step.LOGIN);
                 break;
             case LOGIN:
-                LOG.info("W2 login acknowledged (cmd=0x{}) -- bootstrap complete",
+                LOG.info("W2 login acknowledged (cmd=0x{}) -- now setting RTC",
                         String.format("%02X", response.cmdId));
+                advanceTo(Step.CLOCK);
+                break;
+            case CLOCK:
+                // The vendor app does not get a dedicated reply for the RTC frame, so whatever
+                // comes back (an ACKY echo, an unrelated frame or nothing at all) must not stop
+                // the sequence -- the clock has already been set by the write itself.
+                LOG.info("W2 clock frame sent, reply cmd={} text=\"{}\" -- bootstrap complete",
+                        hexCmdId(response), response.extrasAsText());
                 onBootstrapComplete();
                 break;
             case DATA:
