@@ -48,6 +48,6 @@ jobs:
         with:
           name: gadgetbridge-w2-debug
           path: |
-            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
