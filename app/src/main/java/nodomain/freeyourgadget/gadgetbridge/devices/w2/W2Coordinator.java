@@ -51,8 +51,9 @@ public class W2Coordinator extends AbstractBLEDeviceCoordinator {
 
     @Override
     protected Pattern getSupportedDeviceName() {
-        // The watch advertises as "W2-<MAC>".
-        return Pattern.compile("^" + Pattern.quote(W2Constants.DEVICE_NAME_PREFIX) + ".*");
+        // 实测手表在不同状态下广播名不同：BLE 广播常见 "W2-<MAC>"，
+        // 而系统配对信息里记录的经典蓝牙名是 "PhicommW2"。两者都要接受，否则扫不到。
+        return Pattern.compile("^(W2-|PhicommW2|PHICOMM_W2).*", Pattern.CASE_INSENSITIVE);
     }
 
     @NonNull
