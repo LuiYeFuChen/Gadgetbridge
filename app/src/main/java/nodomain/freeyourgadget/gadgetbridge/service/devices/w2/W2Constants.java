@@ -93,6 +93,24 @@ public final class W2Constants {
 
     /** Frame command ids (only the ones used by this stage). */
     public static final int CMD_BIND = 0x01;
+
+    /**
+     * Set the RTC ("BCD 对时帧", capture frame W6).
+     * <p>
+     * Numerically identical to {@link #CMD_BIND} — the firmware tells the two apart by the
+     * frame tag ({@link #TAG_CLOCK} vs {@link #TAG_BIND}), not by the command id. Kept as its
+     * own constant so call sites read as intent rather than as a magic 0x01.
+     * <p>
+     * Payload is exactly 6 bytes, plain hexadecimal values (not BCD despite the nickname the
+     * vendor app's log uses): {@code {year - 2000, month 1-12, day 1-31, hour 0-23,
+     * minute 0-59, second 0-59}}.
+     * <p>
+     * The {@code SYNC <unix> ...} text command (step {@code TIME}) is answered with {@code ACKY}
+     * but does <b>not</b> move the watch RTC; this frame is what actually sets it. Both must be
+     * sent, in this order.
+     */
+    public static final int CMD_CLOCK = 0x01;
+
     public static final int CMD_LOGIN = 0x03;
     public static final int CMD_STEPS = 0x06;
     public static final int CMD_DATA_REQUEST = 0x20;
@@ -102,6 +120,15 @@ public final class W2Constants {
 
     /** Frame tag values, taken verbatim from the vendor capture (semantics unverified). */
     public static final int TAG_BIND = 1;
+
+    /**
+     * Tag used by the RTC frame (capture W6: {@code a0 01 01 00 02 ...}).
+     * <p>
+     * Same numeric value as {@link #TAG_QUERY}; the firmware dispatches cmd 0x01 on the tag,
+     * so this is the field that distinguishes a clock set from a bind.
+     */
+    public static final int TAG_CLOCK = 2;
+
     public static final int TAG_QUERY = 2;
     public static final int TAG_DATA = 3;
     public static final int TAG_SINGLE = 6;
