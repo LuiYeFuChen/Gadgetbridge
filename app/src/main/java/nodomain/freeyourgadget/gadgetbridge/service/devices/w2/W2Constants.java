@@ -71,7 +71,7 @@ public final class W2Constants {
     public static final String ROUTE_RECEIVER = "band_receiver";
 
     /** Gap inserted between write and read (the device is a single-channel state machine). */
-    public static final int CMD_GAP_MS = 120;
+    public static final int CMD_GAP_MS = 300;
 
     /** First read of a session: the device sometimes answers with an empty value. */
     public static final int FIRST_READ_RETRIES = 3;
