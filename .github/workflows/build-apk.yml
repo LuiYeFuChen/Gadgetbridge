@@ -40,6 +40,21 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      # JitPack 上的 com.github.Freeyourgadget:greendao 已无法构建（缺 android-23 SDK），
+      # 但 fork 的 DaoGenerator 是纯 Java（只依赖 freemarker），直接在 CI 里编译成 jar 供 GBDaoGenerator 使用。
+      # 这个 fork 修了「多次 .primaryKey() 调用生成复合主键」的问题，官方 2.2.0 不支持，会导致建表 SQL 报错。
+      - name: Build greenDAO fork generator jar
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/Freeyourgadget/greenDAO.git /tmp/gdao
+          curl -sL -o /tmp/freemarker.jar https://repo.maven.apache.org/maven2/org/freemarker/freemarker/2.3.23/freemarker-2.3.23.jar
+          mkdir -p /tmp/gdao-out libs
+          find /tmp/gdao/DaoGenerator/src -name "*.java" > /tmp/srcs.txt
+          echo "compiling $(wc -l < /tmp/srcs.txt) source files"
+          javac -nowarn -source 8 -target 8 -cp /tmp/freemarker.jar -d /tmp/gdao-out @/tmp/srcs.txt
+          jar cf libs/greendao-generator-fork.jar -C /tmp/gdao-out .
+          ls -lh libs/
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
