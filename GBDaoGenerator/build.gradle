@@ -6,8 +6,11 @@ archivesBaseName = 'gadgetbridge-daogenerator'
 
 dependencies {
     // 原为 JitPack 上的 Freeyourgadget fork（com.github.Freeyourgadget:greendao:1998d7cd...），
-    // 该构建在 JitPack 上已不可解析，改用 Maven Central 的官方 2.x 生成器（同一 de.greenrobot.daogenerator 包）
-    implementation 'org.greenrobot:greendao-generator:2.2.0'
+    // 该构建在 JitPack 上已不可用（缺 android-23 SDK）。
+    // 现由 CI 直接从 fork 源码编译成 libs/greendao-generator-fork.jar（见 .github/workflows/build-apk.yml）。
+    // 必须用这个 fork：它支持「多次 .primaryKey() 生成复合主键」，官方 2.2.0 会生成多主键的非法建表语句。
+    implementation files("${rootProject.projectDir}/libs/greendao-generator-fork.jar")
+    implementation 'org.freemarker:freemarker:2.3.23'
 }
 
 sourceSets {
