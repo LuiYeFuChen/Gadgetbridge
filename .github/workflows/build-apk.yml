@@ -52,7 +52,9 @@ jobs:
           find /tmp/gdao/DaoGenerator/src -name "*.java" > /tmp/srcs.txt
           echo "compiling $(wc -l < /tmp/srcs.txt) source files"
           javac -nowarn -source 8 -target 8 -cp /tmp/freemarker.jar -d /tmp/gdao-out @/tmp/srcs.txt
-          jar cf libs/greendao-generator-fork.jar -C /tmp/gdao-out .
+          # freemarker 模板（dao.ftl / entity.ftl 等）必须放在 jar 根目录，否则运行时报 TemplateNotFoundException
+          jar cf libs/greendao-generator-fork.jar -C /tmp/gdao-out . -C /tmp/gdao/DaoGenerator/src-template .
+          unzip -l libs/greendao-generator-fork.jar | grep -c "\.ftl" | xargs -I{} echo "templates in jar: {}"
           ls -lh libs/
 
       - name: Build debug APK
