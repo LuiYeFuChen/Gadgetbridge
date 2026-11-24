@@ -58,12 +58,9 @@ public class W2Coordinator extends AbstractBLEDeviceCoordinator {
     @NonNull
     @Override
     public Collection<? extends ScanFilter> createBLEScanFilters() {
-        // Scanning by service UUID is more reliable than by name, and also matches devices
-        // that do not put the name in the advertisement.
-        final ScanFilter filter = new ScanFilter.Builder()
-                .setServiceUuid(new ParcelUuid(W2Constants.UUID_SERVICE))
-                .build();
-        return Collections.singletonList(filter);
+        // W2 的广播包不保证携带 0x18A0 service UUID（实测用 UUID 过滤会完全扫不到设备）。
+        // 返回空列表 → 系统上报所有广播，由基类通过 getSupportedDeviceName() 的 "W2-" 前缀匹配。
+        return Collections.emptyList();
     }
 
     @Override
