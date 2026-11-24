@@ -1850,6 +1850,7 @@
     <string name="devicetype_soundcore_liberty4_nc">Soundcore Liberty 4 NC</string>
     <string name="devicetype_soundcore_motion300">Soundcore Motion 300</string>
     <string name="devicetype_moondrop_space_travel">Moondrop Space Travel</string>
+    <string name="devicetype_phicomm_w2">Phicomm W2</string>
     <string name="devicetype_binary_sensor">Binary sensor</string>
     <string name="devicetype_honor_band3">Honor Band 3</string>
     <string name="devicetype_honor_band4">Honor Band 4</string>
