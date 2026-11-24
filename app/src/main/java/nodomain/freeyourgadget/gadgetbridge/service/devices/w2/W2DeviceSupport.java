@@ -26,7 +26,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
+import java.util.Locale;
 import java.util.TimeZone;
 
 import nodomain.freeyourgadget.gadgetbridge.Logging;
@@ -54,11 +56,14 @@ import nodomain.freeyourgadget.gadgetbridge.service.btle.actions.SetDeviceStateA
  * Bootstrap (verified on hardware, see {@code docs/Gadgetbridge接入_实现方案.md} §5.0):
  * <ol>
  *     <li>{@code SYNC REQV} — read the firmware version, also puts the channel in EXCD mode</li>
- *     <li>{@code SYNC <unix> <tz_ms> 1.2 ANDROID} — set the clock</li>
+ *     <li>{@code SYNC <unix> <tz_ms> 1.2 ANDROID} — text time announcement (answered with
+ *         {@code ACKY}, but it does <b>not</b> move the watch RTC)</li>
+ *     <li>frame tag 2 / cmd 0x01, 6 byte payload — the frame that actually sets the RTC
+ *         (capture W6). Does not necessarily answer, so it must not block the sequence.</li>
  *     <li>frame cmd 0x01 (bind, 42 byte payload)</li>
  *     <li>frame cmd 0x03 (login, 42 byte payload)</li>
  * </ol>
- * Only after all four have been answered does the device accept data requests; skipping any
+ * Only after all of them have been sent does the device accept data requests; skipping any
  * of them makes every later request fail silently.
  */
 public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
@@ -68,6 +73,8 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
     private enum Step {
         VERSION,
         TIME,
+        /** RTC frame (capture W6): tag 2, cmd 0x01, 6 byte hex date/time payload. */
+        CLOCK,
         BIND,
         LOGIN,
         DATA,
@@ -179,6 +186,10 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
                 return Packet.envelope("SYNC REQV", null);
             case TIME:
                 return Packet.envelope(buildSyncTimeText(), null);
+            case CLOCK:
+                return Packet.excd(W2Constants.CMD_CLOCK,
+                        buildClockPayload(),
+                        W2Constants.TAG_CLOCK);
             case BIND:
                 return Packet.excd(W2Constants.CMD_BIND,
                         Packet.bindPayload(W2Constants.DEFAULT_USER_ID, 0L),
@@ -207,6 +218,52 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
         final int tzMillis = TimeZone.getDefault().getOffset(nowMs);
         return "SYNC " + unixSeconds + " " + tzMillis + " "
                 + W2Constants.APP_VERSION + " " + W2Constants.PLATFORM;
+    }
+
+    /**
+     * Builds the 6 byte RTC payload, in the phone's current time zone.
+     * <p>
+     * Verified layout (capture W6, {@code a0 01 01 00 02 08 01 06 | 1a 0b 18 10 30 0d | 3d}):
+     * <pre>
+     *  [0] year   - 2000   (0x1a = 26 -> 2026)
+     *  [1] month   1..12   (0x0b = 11)
+     *  [2] day     1..31   (0x18 = 24)
+     *  [3] hour    0..23   (0x10 = 16)
+     *  [4] minute  0..59   (0x30 = 48)
+     *  [5] second  0..59   (0x0d = 13)
+     * </pre>
+     * Plain hexadecimal values, <b>not</b> BCD — 0x18 is the 24th in hex, a BCD reading would
+     * give 18. The values are taken as-is from a real {@link Calendar}; {@code & 0xFF} only
+     * keeps the byte cast explicit, it is not a clamping step.
+     *
+     * @return the 6 byte payload, never {@code null}.
+     */
+    private byte[] buildClockPayload() {
+        // Calendar.getInstance() already uses TimeZone.getDefault(), which on a phone set to
+        // Asia/Shanghai gives the UTC+8 wall clock time -- that is what the watch must show.
+        final Calendar now = Calendar.getInstance();
+        final int year = now.get(Calendar.YEAR) % 100;          // e.g. 2026 -> 26
+        final int month = now.get(Calendar.MONTH) + 1;          // Calendar.MONTH is 0 based
+        final int day = now.get(Calendar.DAY_OF_MONTH);
+        final int hour = now.get(Calendar.HOUR_OF_DAY);         // 24h, not HOUR (12h)
+        final int minute = now.get(Calendar.MINUTE);
+        final int second = now.get(Calendar.SECOND);
+
+        final byte[] payload = new byte[6];
+        payload[0] = (byte) (year & 0xFF);
+        payload[1] = (byte) (month & 0xFF);
+        payload[2] = (byte) (day & 0xFF);
+        payload[3] = (byte) (hour & 0xFF);
+        payload[4] = (byte) (minute & 0xFF);
+        payload[5] = (byte) (second & 0xFF);
+
+        // slf4j only understands the "{}" placeholder (no printf conversions), so the date is
+        // formatted up front.
+        LOG.info("W2 clock payload: {} tz={}",
+                String.format(Locale.US, "20%02d-%02d-%02d %02d:%02d:%02d",
+                        year, month, day, hour, minute, second),
+                TimeZone.getDefault().getID());
+        return payload;
     }
 
     // ---------------------------------------------------------------------
@@ -266,6 +323,18 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
             LOG.info("W2 first read of session was empty, retrying");
         }
         LOG.warn("W2 empty read ({}) for step {}", emptyReadCount, bootstrapStep);
+
+        // The RTC frame is fire-and-forget: the vendor app does not wait for an answer, and on
+        // hardware the reply is often a 0-byte value. Retrying here would burn the retry budget
+        // and end in WAITING_FOR_RECONNECT, so advance immediately -- the clock was already set
+        // by the write.
+        if (bootstrapStep == Step.CLOCK) {
+            LOG.info("W2 clock frame got no reply (expected), continuing to bind");
+            emptyReadCount = 0;
+            advanceTo(Step.BIND);
+            return;
+        }
+
         if (emptyReadCount <= W2Constants.FIRST_READ_RETRIES) {
             queueReadRetry();
             return;
@@ -290,6 +359,14 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
                 break;
             case TIME:
                 LOG.info("W2 time sync acknowledged: {}", response.extrasAsText());
+                advanceTo(Step.CLOCK);
+                break;
+            case CLOCK:
+                // The vendor app does not get a dedicated reply for the RTC frame, so whatever
+                // comes back (an ACKY echo, an unrelated frame or nothing at all) must not stop
+                // the sequence -- the clock has already been set by the write itself.
+                LOG.info("W2 clock frame sent, reply cmd={} text=\"{}\" -- continuing to bind",
+                        hexCmdId(response), response.extrasAsText());
                 advanceTo(Step.BIND);
                 break;
             case BIND:
@@ -313,6 +390,18 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
     private void advanceTo(final Step next) {
         bootstrapStep = next;
         queueCurrentStep();
+    }
+
+    /**
+     * @param response a parsed response.
+     * @return the command id as two hex digits, or {@code "none"} when the response carried no
+     *         frame at all (which is the normal case for the RTC step).
+     */
+    private static String hexCmdId(final Response response) {
+        if (response.frame.length == 0) {
+            return "none";
+        }
+        return String.format(Locale.US, "0x%02X", response.cmdId);
     }
 
     private void onBootstrapComplete() {
