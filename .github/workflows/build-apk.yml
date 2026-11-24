@@ -46,16 +46,25 @@ jobs:
       - name: Build greenDAO fork generator jar
         run: |
           set -e
-          git clone --depth 1 https://github.com/Freeyourgadget/greenDAO.git /tmp/gdao
+          # 必须精确检出 commit 1998d7c —— 它是唯一带「复合主键」支持的版本：
+          #   dao.ftl 会收集所有 PK 列并在建表语句末尾生成 PRIMARY KEY (a,b,c) ON CONFLICT REPLACE) WITHOUT ROWID
+          # 而该仓库 master 已把此修复回退（dao.ftl 中没有 pks/WITHOUT ROWID），用 master 会生成
+          # 多个单列 PRIMARY KEY 的非法建表语句，导致 App 启动即崩（SQLiteException: more than one primary key）。
+          rm -rf /tmp/gdao && mkdir -p /tmp/gdao && cd /tmp/gdao
+          git init -q
+          git remote add origin https://github.com/Freeyourgadget/greenDAO.git
+          git fetch -q --depth 1 origin 1998d7cd2d21f662c6044f6ccf3b3a251bbad341
+          git checkout -q FETCH_HEAD
+          echo "checked out: $(git rev-parse HEAD)"
+          grep -c "WITHOUT ROWID" DaoGenerator/src-template/dao.ftl | xargs -I{} echo "composite-PK support markers: {}"
           curl -sL -o /tmp/freemarker.jar https://repo.maven.apache.org/maven2/org/freemarker/freemarker/2.3.23/freemarker-2.3.23.jar
-          mkdir -p /tmp/gdao-out libs
-          find /tmp/gdao/DaoGenerator/src -name "*.java" > /tmp/srcs.txt
+          mkdir -p /tmp/gdao-out "$GITHUB_WORKSPACE/libs"
+          find DaoGenerator/src -name "*.java" > /tmp/srcs.txt
           echo "compiling $(wc -l < /tmp/srcs.txt) source files"
           javac -nowarn -source 8 -target 8 -cp /tmp/freemarker.jar -d /tmp/gdao-out @/tmp/srcs.txt
-          # freemarker 模板（dao.ftl / entity.ftl 等）必须放在 jar 根目录，否则运行时报 TemplateNotFoundException
-          jar cf libs/greendao-generator-fork.jar -C /tmp/gdao-out . -C /tmp/gdao/DaoGenerator/src-template .
-          unzip -l libs/greendao-generator-fork.jar | grep -c "\.ftl" | xargs -I{} echo "templates in jar: {}"
-          ls -lh libs/
+          jar cf "$GITHUB_WORKSPACE/libs/greendao-generator-fork.jar" -C /tmp/gdao-out . -C DaoGenerator/src-template .
+          unzip -l "$GITHUB_WORKSPACE/libs/greendao-generator-fork.jar" | grep -c "\.ftl" | xargs -I{} echo "templates in jar: {}"
+          ls -lh "$GITHUB_WORKSPACE/libs/"
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
