@@ -104,6 +104,11 @@ public class W2DeviceSupport extends AbstractBTLEDeviceSupport {
 
         builder.add(new SetDeviceStateAction(getDevice(), GBDevice.State.INITIALIZING, getContext()));
 
+        // Android 默认 MTU 是 23（单次写上限 20 字节）。W2 的首个命令只有 18 字节能写成功，
+        // 但 45 字节的对时帧和 98 字节的绑定帧都会写失败（真机日志：write failed: 241）。
+        // 必须先协商 MTU，否则 bootstrap 会停在第 2 步。
+        builder.requestMtu(512);
+
         bootstrapStep = Step.VERSION;
         emptyReadCount = 0;
         firstRead = true;
